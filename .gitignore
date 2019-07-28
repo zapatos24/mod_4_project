@@ -105,3 +105,6 @@ venv.bak/
 
 # native_mac_files
 .DS_Store
+
+# too_big_csv
+data.csv
