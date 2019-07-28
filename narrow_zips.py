@@ -7,6 +7,8 @@ start_year = 2012
 filename = 'data.csv'
 pct_change_filter = .01
 std_dev_filter = .33
+cols = ['Zipcode', 'City', 'State', 'Pct_change', 'Std_dev']
+
 
 def prep_data(filename, start_year):
     raw_data = pd.io.parsers.read_csv(filename, dtype={'Zipcode': 'str'}, index_col=[0])
@@ -39,7 +41,6 @@ def get_top_zipcodes(zipcode_stats):
     sorted_by_std = sorted(top_pct_changes, key=lambda x: x[4])
     lowest_std_devs = sorted_by_std[: int(len(sorted_by_std) * std_dev_filter)]
     top_zipcodes = sorted(lowest_std_devs, key=lambda x: x[3], reverse=True)
-    cols = ['Zipcode', 'City', 'State', 'Pct_change', 'Std_dev']
     return pd.DataFrame(top_zipcodes, columns=cols)
 
 top_zipcodes = get_top_zipcodes(zipcode_stats)
@@ -53,5 +54,6 @@ def compare_top_zipcodes(top_zipcodes):
             zipcodes_to_model.append(row[1])
             already_used[row[1].State] = True
     return pd.DataFrame(zipcodes_to_model, columns=cols)
-    
+
 zipcodes_to_model = compare_top_zipcodes(top_zipcodes)
+zipcodes_to_model
