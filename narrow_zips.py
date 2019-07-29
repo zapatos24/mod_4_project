@@ -2,38 +2,115 @@ import csv
 import pandas as pd
 import numpy as np
 import datetime
+from ProcessData import ProcessData
+import pandas as pd
+import numpy as np
+import statsmodels as sm
+import matplotlib.pyplot as plt
+# import seaborn as sns
+# from statsmodels.graphics.tsaplots import plot_acf, plot_pacf
+# from statsmodels.tsa.stattools import adfuller
+from statsmodels.tsa.arima_model import ARIMA
+from sklearn.metrics import mean_squared_error
+# from dateutil.relativedelta import relativedelta
+# from fbprophet import Prophet
+import datetime as datetime
+import warnings
+processed_data = ProcessData()
 
-start_year = 2012
-filename = 'data.csv'
+monthly_medians = processed_data.monthly_medians
+dataframes = processed_data.dataframes
+zipcodes = processed_data.zipcodes
+
+
+filtered_dfs[12468]
+filtered_dfs = filter_data(dataframes)
+zipcode_stats = get_stats(filtered_dfs)
+top_zipcodes = get_top_zipcodes(zipcode_stats)
+zipcodes_to_model = compare_top_zipcodes(top_zipcodes)
+zipcodes_to_model
+to_model = dataframes_to_model(zipcodes_to_model)
+p_values = range(0, 4)
+d_values = range(0, 3)
+q_values = range(0, 3)
+best_orders = []
+for model in to_model:
+    best_order = evaluate_models(model.Price, p_values, d_values, q_values)
+    best_orders.append(best_order)
+
+best_orders
+def evaluate_arima_model(time_series, arima_order):
+    # prepare training dataset
+    time_series_filtered = time_series.squeeze()
+    train_size = int(len(time_series_filtered) * 0.66)
+    train, test = time_series_filtered[0:train_size], time_series_filtered[train_size:]
+    history = [x for x in train]
+
+    predictions = []
+    for t in range(len(test)):
+        model = ARIMA(history, order=arima_order)
+        model_fit = model.fit(disp=0)
+        yhat = model_fit.forecast()[0]
+        predictions.append(yhat)
+        history.append(test[t])
+    # calculate out of sample error
+    error = mean_squared_error(test, predictions)
+    return error
+
+def evaluate_models(time_series, p_values, d_values, q_values):
+    time_series = time_series.astype('float32')
+    best_score, best_cfg = 100000000.0, None
+    for p in p_values:
+        for d in d_values:
+            for q in q_values:
+                order = (p,d,q)
+                try:
+                    mse = evaluate_arima_model(time_series, order)
+                    if mse < best_score:
+                        best_score, best_cfg = mse, order
+                except:
+                    continue
+    print('Best ARIMA%s MSE=%.3f' % (best_cfg, best_score))
+    return best_cfg
+
+for entry in best_post_crash_arima:
+    history = time_series[entry['index']].astype('float32')['2010':].squeeze()
+    model = ARIMA(history, order=entry['pdq'])
+    model_fit = model.fit(disp=0)
+    model_predict = model_fit.forecast(12*5)
+    future_percent_for_zip = (model_predict[0][-1] - history[-1]) / history[-1]
+    future_growth_by_zip_5_year.append({'index': entry['index'],
+                                        'zipcode': entry['zipcode'],
+                                        'growth_predict': round(future_percent_for_zip*100, 2),
+                                        'growth_values': model_predict[0]})
+
+
+start_date = '2010-01-01'
 pct_change_filter = .01
 std_dev_filter = .33
-cols = ['Zipcode', 'City', 'State', 'Pct_change', 'Std_dev']
+cols = ['Zipcode', 'City', 'State', 'Pct_change', 'Std_dev', 'df_index']
 
+def filter_data(dataframes):
+    filtered_dfs = []
+    for dataframe in dataframes:
+        filtered_df = dataframe.loc[start_date:]
+        filtered_dfs.append(filtered_df)
+    return filtered_dfs
 
-def prep_data(filename, start_year):
-    raw_data = pd.io.parsers.read_csv(filename, dtype={'Zipcode': 'str'}, index_col=[0])
-    raw_data.index = pd.to_datetime(raw_data.index)
-    start_date = datetime.datetime(start_year, 1, 1)
-    data = raw_data.loc['2012-01-01':]
-    return data
-
-def get_stats(all_zipcodes):
+def get_stats(dataframes):
     zipcode_stats = []
-    for curr_zipcode in all_zipcodes:
-        zipcode_data = data[data.Zipcode == curr_zipcode]
-        price_diff = zipcode_data.iloc[-1].price - zipcode_data.iloc[0].price
-        pct_change = price_diff / (zipcode_data.iloc[0].price * 100)
-        std_dev = np.std(zipcode_data.price)
-        curr_zip_stats = [zipcode_data.iloc[0].Zipcode, zipcode_data.iloc[0].City,
-                          zipcode_data.iloc[0].State, pct_change, std_dev]
+    for index, df in enumerate(dataframes):
+        price_diff = df.iloc[-1].Price - df.iloc[0].Price
+        pct_change = (price_diff / df.iloc[0].Price) * 100
+        std_dev = np.std(df.Price)
+        variance = std_dev ** 2
+        # covariance = np.cov(df.Price, monthly_medians.values)[0][1]
+        # add beta to curr_zip_stats
+        # beta = covariance/variance
+        curr_zip_stats = [df.iloc[0].Zipcode, df.iloc[0].City,
+                          df.iloc[0].State, pct_change, std_dev, index]
         zipcode_stats.append(curr_zip_stats)
     return zipcode_stats
-
-# data.csv is output from process_data.py
-
-data = prep_data(filename, start_year)
-all_zipcodes = data.Zipcode.unique()
-zipcode_stats = get_stats(all_zipcodes)
 
 def get_top_zipcodes(zipcode_stats):
     sorted_by_pct_change = sorted(zipcode_stats, key=lambda x: x[3], reverse=True)
@@ -41,19 +118,27 @@ def get_top_zipcodes(zipcode_stats):
     sorted_by_std = sorted(top_pct_changes, key=lambda x: x[4])
     lowest_std_devs = sorted_by_std[: int(len(sorted_by_std) * std_dev_filter)]
     top_zipcodes = sorted(lowest_std_devs, key=lambda x: x[3], reverse=True)
-    return pd.DataFrame(top_zipcodes, columns=cols)
-
-top_zipcodes = get_top_zipcodes(zipcode_stats)
+    return top_zipcodes
 
 def compare_top_zipcodes(top_zipcodes):
-    top_states = top_zipcodes.State.unique()
+    top_states = set()
+    for curr_zipcode in top_zipcodes:
+        top_states.add(curr_zipcode[2])
+
     already_used = dict(zip(top_states, [False for _ in range(len(top_states))]))
     zipcodes_to_model = []
-    for row in top_zipcodes.iterrows():
-        if not already_used[row[1].State]:
-            zipcodes_to_model.append(row[1])
-            already_used[row[1].State] = True
-    return pd.DataFrame(zipcodes_to_model, columns=cols)
+    #  ensures only 1 zipcode per state
+    for curr_zipcode in top_zipcodes:
+        state = curr_zipcode[2]
+        if not already_used[state]:
+            zipcodes_to_model.append(curr_zipcode)
+            already_used[state] = True
+    return zipcodes_to_model
 
-zipcodes_to_model = compare_top_zipcodes(top_zipcodes)
-zipcodes_to_model
+def dataframes_to_model(zipcodes_to_model):
+    dfs = []
+    for zipcode_to_model in zipcodes_to_model:
+        index = zipcode_to_model[-1]
+        df = filtered_dfs[index]
+        dfs.append(df)
+    return dfs
