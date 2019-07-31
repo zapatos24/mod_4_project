@@ -7,10 +7,12 @@ import pandas as pd
 import numpy as np
 import statsmodels as sm
 import matplotlib.pyplot as plt
+from pmdarima.arima import auto_arima
 # import seaborn as sns
 # from statsmodels.graphics.tsaplots import plot_acf, plot_pacf
 # from statsmodels.tsa.stattools import adfuller
 from statsmodels.tsa.arima_model import ARIMA
+#
 from sklearn.metrics import mean_squared_error
 # from dateutil.relativedelta import relativedelta
 # from fbprophet import Prophet
@@ -21,8 +23,9 @@ def evaluate_arima_model(time_series, arima_order):
     # prepare training dataset
     time_series_filtered = time_series.squeeze()
     train_size = int(len(time_series_filtered) * 0.66)
-    train, test = time_series_filtered[0:train_size], time_series_filtered[train_size:]
-    history = [x for x in train]
+    train = time_series_filtered[0:train_size]
+    test =  time_series_filtered[train_size:]
+    history = list(train)
 
     predictions = []
     for t in range(len(test)):
@@ -51,18 +54,6 @@ def evaluate_models(time_series, p_values, d_values, q_values):
     print('Best ARIMA%s MSE=%.3f' % (best_cfg, best_score))
     return best_cfg
 
-start_date = '2010-01-01'
-include_nas = False
-pct_change_filter = .01
-std_dev_filter = .33
-cols = ['Zipcode', 'City', 'State', 'Pct_change', 'Std_dev', 'df_index']
-
-def filter_data(dataframes):
-    filtered_dfs = []
-    for dataframe in dataframes:
-        filtered_df = dataframe.loc[start_date:]
-        filtered_dfs.append(filtered_df)
-    return filtered_dfs
 
 def get_stats(dataframes):
     zipcode_stats = []
@@ -106,53 +97,42 @@ def dataframes_to_model(zipcodes_to_model):
     dfs = []
     for zipcode_to_model in zipcodes_to_model:
         index = zipcode_to_model[-1]
-        df = filtered_dfs[index]
+        df = dataframes[index]
         dfs.append(df)
     return dfs
 
-def get_best_zipcodes(years_to_forecast = 5):
-    filtered_dfs = filter_data(dataframes)
-    zipcode_stats = get_stats(filtered_dfs)
+def get_best_zipcodes(dataframes, years_to_forecast = 5):
+    zipcode_stats = get_stats(dataframes)
     top_zipcodes = get_top_zipcodes(zipcode_stats)
     zipcodes_to_model = compare_top_zipcodes(top_zipcodes)
-    zipcodes_to_model
     to_model = dataframes_to_model(zipcodes_to_model)
-    p_values = range(0, 3)
-    d_values = range(1, 3)
-    q_values = range(0, 3)
-    best_orders = []
-    best_orders
-    for model in to_model:
-        best_order = evaluate_models(model.Price, p_values, d_values, q_values)
-        best_orders.append(best_order)
     periods = 12 * years_to_forecast
-    datelist = pd.date_range(pd.datetime(2018,5,1), periods=periods, freq='MS').tolist()
-    dfs_with_predictions = []
-    future_growths = []
-    for index, order in enumerate(best_orders):
-        dates = list(to_model[index].index)
-        dates.extend(datelist)
-        all_prices = list(to_model[index].Price)
-        # history = to_model[index].Price
-        model = ARIMA(pd.Series(all_prices, dtype = 'float32'), order=order)
-        model_fit = model.fit(disp=0)
-        model_predict = model_fit.forecast(periods)
-
-        future_growth = (model_predict[0][-1] - all_prices[-1]) * 100 / all_prices[-1]
-        future_growths.append((future_growth, to_model[index].iloc[0].Zipcode, to_model[index].iloc[0].City, to_model[index].iloc[0].State))
-        all_prices.extend(model_predict[0])
-
-        df_with_prediction = pd.DataFrame(all_prices, index=dates)
-        dfs_with_predictions.append(df_with_prediction)
-
-    return sorted(future_growths, key = lambda x: x[0], reverse=True)
+    forecasts = []
+    for df in to_model:
+        model = auto_arima(df.Price, trace=True, error_action='ignore', suppress_warnings=True)
+        model.fit(df.Price)
+        forecast = model.predict(periods)
+        forecasts.append(forecast)
+    return forecasts
 
 # start date
-start_date = '2010-01-01'
+pct_change_filter = .3
+std_dev_filter = .33
+cols = ['Zipcode', 'City', 'State', 'Pct_change', 'Std_dev', 'df_index']
+
+start_date = '2011-01-01'
 end_of_collection = '2018-04-01'
 years_to_forecast = 5
-processed_data = ProcessData('2010-01-01')
+processed_data = ProcessData(start_date)
 monthly_medians = processed_data.monthly_medians
 dataframes = processed_data.dataframes
 zipcodes = processed_data.zipcodes
-best_zips = get_best_zipcodes()
+forecasts = get_best_zipcodes(dataframes)
+
+growths = []
+for forecast in forecasts:
+    pct_growth = (forecast[-1] - forecast[0]) * 100 / forecast[0]
+    growths.append(pct_growth)
+growths
+zipped = zip(growths, zipcodes)
+sorted(zipped, key = lambda x: x[0], reverse=True)
