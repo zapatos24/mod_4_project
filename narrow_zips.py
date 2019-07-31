@@ -23,7 +23,7 @@ dataframes = processed_data.dataframes
 zipcodes = processed_data.zipcodes
 
 
-filtered_dfs[12468]
+
 filtered_dfs = filter_data(dataframes)
 zipcode_stats = get_stats(filtered_dfs)
 top_zipcodes = get_top_zipcodes(zipcode_stats)
@@ -34,11 +34,33 @@ p_values = range(0, 4)
 d_values = range(0, 3)
 q_values = range(0, 3)
 best_orders = []
+best_orders
 for model in to_model:
     best_order = evaluate_models(model.Price, p_values, d_values, q_values)
     best_orders.append(best_order)
 
-best_orders
+datelist = pd.date_range(pd.datetime(2018,5,1), periods=12*5, freq='MS').tolist()
+dfs_with_predictions = []
+future_growths = []
+for index, order in enumerate(best_orders):
+    dates = list(to_model[index].index)
+    dates.extend(datelist)
+    all_prices = list(to_model[index].Price)
+    # history = to_model[index].Price
+    model = ARIMA(pd.Series(all_prices, dtype = 'float32'), order=order)
+    model_fit = model.fit(disp=0)
+    model_predict = model_fit.forecast(60)
+
+    future_growth = (model_predict[0][-1] - all_prices[-1]) * 100 / all_prices[-1]
+    future_growths.append((future_growth, to_model[index].iloc[0].Zipcode, to_model[index].iloc[0].City, to_model[index].iloc[0].State))
+    all_prices.extend(model_predict[0])
+
+    df_with_prediction = pd.DataFrame(all_prices, index=dates)
+    dfs_with_predictions.append(df_with_prediction)
+
+future_growths
+
+
 def evaluate_arima_model(time_series, arima_order):
     # prepare training dataset
     time_series_filtered = time_series.squeeze()
@@ -72,18 +94,6 @@ def evaluate_models(time_series, p_values, d_values, q_values):
                     continue
     print('Best ARIMA%s MSE=%.3f' % (best_cfg, best_score))
     return best_cfg
-
-for entry in best_post_crash_arima:
-    history = time_series[entry['index']].astype('float32')['2010':].squeeze()
-    model = ARIMA(history, order=entry['pdq'])
-    model_fit = model.fit(disp=0)
-    model_predict = model_fit.forecast(12*5)
-    future_percent_for_zip = (model_predict[0][-1] - history[-1]) / history[-1]
-    future_growth_by_zip_5_year.append({'index': entry['index'],
-                                        'zipcode': entry['zipcode'],
-                                        'growth_predict': round(future_percent_for_zip*100, 2),
-                                        'growth_values': model_predict[0]})
-
 
 start_date = '2010-01-01'
 pct_change_filter = .01

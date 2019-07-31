@@ -11,7 +11,7 @@ class ProcessData:
         dataframes = []
         zipcodes = []
         for name, group in melted.groupby('Zipcode'):
-            prices = self.backfill_price(group)
+            self.prices = self.backfill_price(group)
             group['Price'] = self.prices
             dataframes.append(group)
             zipcodes.append(group.iloc[0].Zipcode)
