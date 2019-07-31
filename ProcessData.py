@@ -4,17 +4,20 @@ import datetime
 
 # changes data from wide format to long format
 class ProcessData:
-    def __init__(self):
+    def __init__(self, start_date = '2011-01-01'):
         raw_data = pd.io.parsers.read_csv('zillow_data.csv', dtype={'RegionName': 'str', 'Price': 'int'})
         melted = self.melt_data(raw_data)
+        melted = melted.loc[start_date:]
         self.monthly_medians = melted.groupby('Time').agg({'Price':'median'})
         dataframes = []
         zipcodes = []
+        monthly_medians = []
         for name, group in melted.groupby('Zipcode'):
-            self.prices = self.backfill_price(group)
-            group['Price'] = self.prices
-            dataframes.append(group)
-            zipcodes.append(group.iloc[0].Zipcode)
+            if group.Price.isna().sum() >= 1:
+                continue
+            else:
+                dataframes.append(group)
+                zipcodes.append(group.iloc[0].Zipcode)
         self.dataframes = dataframes
         self.zipcodes = zipcodes
 
@@ -38,3 +41,13 @@ class ProcessData:
             else:
                 prices.append(int(curr_price))
         return prices[::-1]
+
+
+    def instead_of_remove_NA(self, df):
+        for name, group in melted.groupby('Zipcode'):
+            self.prices = self.backfill_price(group)
+            group['Price'] = self.prices
+            dataframes.append(group)
+            zipcodes.append(group.iloc[0].Zipcode)
+        self.dataframes = dataframes
+        self.zipcodes = zipcodes
