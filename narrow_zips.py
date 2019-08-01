@@ -8,51 +8,21 @@ import numpy as np
 import statsmodels as sm
 import matplotlib.pyplot as plt
 from pmdarima.arima import auto_arima
-# import seaborn as sns
-# from statsmodels.graphics.tsaplots import plot_acf, plot_pacf
-# from statsmodels.tsa.stattools import adfuller
+# take a look at fbprophet library
+
 from statsmodels.tsa.arima_model import ARIMA
-#
+
 from sklearn.metrics import mean_squared_error
-# from dateutil.relativedelta import relativedelta
-# from fbprophet import Prophet
 import datetime as datetime
 import warnings
 
-def evaluate_arima_model(time_series, arima_order):
-    # prepare training dataset
-    time_series_filtered = time_series.squeeze()
-    train_size = int(len(time_series_filtered) * 0.66)
-    train = time_series_filtered[0:train_size]
-    test =  time_series_filtered[train_size:]
-    history = list(train)
+import sys, os
+def blockPrint():
+    sys.stdout = open(os.devnull, 'w')
 
-    predictions = []
-    for t in range(len(test)):
-        model = ARIMA(history, order=arima_order)
-        model_fit = model.fit(disp=0)
-        yhat = model_fit.forecast()[0]
-        predictions.append(yhat)
-        history.append(test[t])
-    # calculate out of sample error
-    error = mean_squared_error(test, predictions)
-    return error
-
-def evaluate_models(time_series, p_values, d_values, q_values):
-    time_series = time_series.astype('float32')
-    best_score, best_cfg = 100000000.0, None
-    for p in p_values:
-        for d in d_values:
-            for q in q_values:
-                order = (p,d,q)
-                try:
-                    mse = evaluate_arima_model(time_series, order)
-                    if mse < best_score:
-                        best_score, best_cfg = mse, order
-                except:
-                    continue
-    print('Best ARIMA%s MSE=%.3f' % (best_cfg, best_score))
-    return best_cfg
+# Restore
+def enablePrint():
+    sys.stdout = sys.__stdout__
 
 
 def get_stats(dataframes):
@@ -70,7 +40,7 @@ def get_stats(dataframes):
         zipcode_stats.append(curr_zip_stats)
     return zipcode_stats
 
-def get_top_zipcodes(zipcode_stats):
+def get_top_zipcodes(zipcode_stats, pct_change_filter, std_dev_filter):
     sorted_by_pct_change = sorted(zipcode_stats, key=lambda x: x[3], reverse=True)
     top_pct_changes = sorted_by_pct_change[: int(len(sorted_by_pct_change) * pct_change_filter)]
     sorted_by_std = sorted(top_pct_changes, key=lambda x: x[4])
@@ -78,7 +48,7 @@ def get_top_zipcodes(zipcode_stats):
     top_zipcodes = sorted(lowest_std_devs, key=lambda x: x[3], reverse=True)
     return top_zipcodes
 
-def compare_top_zipcodes(top_zipcodes):
+def top_from_each_state(top_zipcodes):
     top_states = set()
     for curr_zipcode in top_zipcodes:
         top_states.add(curr_zipcode[2])
@@ -93,7 +63,7 @@ def compare_top_zipcodes(top_zipcodes):
             already_used[state] = True
     return zipcodes_to_model
 
-def dataframes_to_model(zipcodes_to_model):
+def dataframes_to_model(zipcodes_to_model, dataframes):
     dfs = []
     for zipcode_to_model in zipcodes_to_model:
         index = zipcode_to_model[-1]
@@ -101,38 +71,47 @@ def dataframes_to_model(zipcodes_to_model):
         dfs.append(df)
     return dfs
 
-def get_best_zipcodes(dataframes, years_to_forecast = 5):
+def get_best_zipcodes(dataframes, pct_change_filter, std_dev_filter, different_states, years_to_forecast = 5):
     zipcode_stats = get_stats(dataframes)
-    top_zipcodes = get_top_zipcodes(zipcode_stats)
-    zipcodes_to_model = compare_top_zipcodes(top_zipcodes)
-    to_model = dataframes_to_model(zipcodes_to_model)
+    top_zipcodes = get_top_zipcodes(zipcode_stats, pct_change_filter, std_dev_filter)
+
+    if different_states:
+        top_zipcodes = top_from_each_state(top_zipcodes)
+    to_model = dataframes_to_model(top_zipcodes, dataframes)
     periods = 12 * years_to_forecast
+    # blockPrint()
     forecasts = []
     for df in to_model:
         model = auto_arima(df.Price, trace=True, error_action='ignore', suppress_warnings=True)
-        model.fit(df.Price)
-        forecast = model.predict(periods)
+        model.fit(df.Price, return_all=False)
+        forecast = model.predict(int(periods))
         forecasts.append(forecast)
-    return forecasts
+    # enablePrint()
+    return forecasts, top_zipcodes
+
+def get_final_zipcodes(start_date = '2011-01-01', years_to_forecast = 5, pct_change_filter = .005, std_dev_filter = 1, different_states=False, zipcode_count = 5):
+    processed_data = ProcessData(start_date)
+    dataframes = processed_data.dataframes
+    forecasts, zipcodes_to_model = get_best_zipcodes(dataframes, pct_change_filter, std_dev_filter, different_states, years_to_forecast)
+    growths = []
+    for forecast in forecasts:
+        pct_growth = (forecast[-1] - forecast[0]) * 100 / forecast[0]
+        growths.append(pct_growth)
+    zipped = zip(growths, zipcodes_to_model) # this is the error
+    top_zipcodes = sorted(zipped, key = lambda x: x[0], reverse=True)
+    print("\n\nHere are the top five zipcodes you should invest in over a {} year period!\n\nProjected Growth".format(years_to_forecast))
+    for zipcode in top_zipcodes[:zipcode_count]:
+        print(zipcode[0], zipcode[1][:3])
+
+
 
 # start date
-pct_change_filter = .3
-std_dev_filter = .33
-cols = ['Zipcode', 'City', 'State', 'Pct_change', 'Std_dev', 'df_index']
+# datelist =
+#
 
-start_date = '2011-01-01'
-end_of_collection = '2018-04-01'
-years_to_forecast = 5
-processed_data = ProcessData(start_date)
-monthly_medians = processed_data.monthly_medians
-dataframes = processed_data.dataframes
-zipcodes = processed_data.zipcodes
-forecasts = get_best_zipcodes(dataframes)
+get_final_zipcodes()
 
-growths = []
-for forecast in forecasts:
-    pct_growth = (forecast[-1] - forecast[0]) * 100 / forecast[0]
-    growths.append(pct_growth)
-growths
-zipped = zip(growths, zipcodes)
-sorted(zipped, key = lambda x: x[0], reverse=True)
+# use the datelist, return an entire dataframe with forecasts
+# create all 3 dataframes
+# listg of dataframes thast correspond to each zipcode 10 years_to_forecast
+# zipcode key, list of % changes, largest_time_frame dataframe
