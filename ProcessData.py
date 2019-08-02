@@ -6,9 +6,8 @@ import datetime
 
 
 class ProcessData:
-    def __init__(self, start_date='2010-01-01'):
-        raw_data = pd.io.parsers.read_csv('zillow_data.csv', dtype={
-                                          'RegionName': 'str', 'Price': 'int'})
+    def __init__(self, start_date):
+        raw_data = pd.io.parsers.read_csv('zillow_data.csv', dtype={'RegionName': 'str', 'Price': 'int'})
         melted = self.melt_data(raw_data)
         self.monthly_medians = melted.groupby('Time').agg({'Price': 'median'})
         melted = melted.loc[start_date:]
