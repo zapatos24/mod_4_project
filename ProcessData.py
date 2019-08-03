@@ -20,6 +20,7 @@ class ProcessData:
                 zipcodes.append(group.iloc[0].Zipcode)
         self.dataframes = dataframes
         self.zipcodes = zipcodes
+        self.get_historical_data()
 
     def melt_data(self, df):
         melted = pd.melt(df, id_vars=['RegionName', 'City', 'State', 'Metro', 'CountyName', 'RegionID', 'SizeRank'], var_name='time')
@@ -29,7 +30,7 @@ class ProcessData:
         melted.drop('RegionID', inplace=True, axis=1)
         return melted
 
-    # backfills (estimates) a zipcode's historical price according to avg % change in housing market
+    # backfills (estimates) a zipcode's historical price according to avg % change in housing market - not used
     def backfill_price(self, df):
         prices = []
         for i in range(len(df)):
@@ -41,3 +42,18 @@ class ProcessData:
             else:
                 prices.append(int(curr_price))
         return prices[::-1]
+
+    def get_historical_data(self):
+        raw_data = pd.io.parsers.read_csv('zillow_data.csv', dtype={'RegionName': 'str', 'Price': 'int'})
+        melted = self.melt_data(raw_data)
+        self.all_monthly_medians = melted.groupby('Time').agg({'Price':'median'})
+        data = dict()
+        for name, group in melted.groupby('Zipcode'):
+            if group.Price.isna().sum() >= 1:
+                continue
+            else:
+                price_diff = group.iloc[-1].Price - group.iloc[0].Price
+                pct_change = (price_diff / group.iloc[0].Price) * 100
+                curr_data = dict(df=group, pct_change=pct_change)
+                data.update(dict(name=curr_data))
+        self.all_zipcodes_dict = data
