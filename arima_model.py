@@ -33,7 +33,7 @@ def evaluate_models(dataset, p_values, d_values, q_values):
     for p in p_values:
         for d in d_values:
             for q in q_values:
-                order = (p,d,q)
+                order = (p, d, q)
                 try:
                     mse = evaluate_arima_model(dataset, order)
                     if mse < best_score:
